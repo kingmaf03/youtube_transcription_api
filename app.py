@@ -131,6 +131,9 @@ from auth import require_custom_authentication
 from dotenv import load_dotenv
 import logging
 
+import requests
+from dotenv import load_dotenv
+
 # Muat environment variables dari file .env
 load_dotenv()
 
@@ -155,7 +158,7 @@ Do NOT modify individual words. Your output should only be the corrected text.""
 
     # Pilih model Gemini yang akan digunakan
     model = genai.GenerativeModel(
-        'gemini-2.5-flash',
+        'gemini-1.5-flash',
         system_instruction=system_instruction
     )
 except Exception as e:
@@ -171,11 +174,51 @@ def process_transcript(video_id):
     """Mengambil transkrip dari YouTube."""
     # Opsi proxy, jika Anda membutuhkannya (bisa dikosongkan)
     proxy_address = os.environ.get("PROXY")
+
+    
     proxies = {"http": proxy_address, "https": proxy_address} if proxy_address else None
     
     transcript = YouTubeTranscriptApi.get_transcript(video_id, proxies=proxies)
     full_text = ' '.join([entry['text'] for entry in transcript])
     return full_text
+
+# Ambil alamat proxy dari environment
+proxy_url = os.environ.get("PROXY")
+
+if not proxy_url:
+    print("Variabel PROXY tidak ditemukan di file .env")
+else:
+    print(f"Mencoba menggunakan proxy: {proxy_url}")
+
+    # Format proxy untuk library requests
+    proxies = {
+        "http": proxy_url,
+        "https": proxy_url,
+    }
+
+    # URL untuk mengetes IP kita
+    test_url = ""
+
+    try:
+        # Kirim permintaan melalui proxy
+        response = requests.get(test_url, proxies=proxies, timeout=10) # Timeout 10 detik
+        response.raise_for_status()  # Cek jika ada error HTTP
+
+        # Cetak hasilnya
+        print("\nTes Berhasil!")
+        print(f"IP Anda terlihat sebagai: {response.json()['origin']}")
+        print("Ini berarti proxy berfungsi dengan baik.")
+
+    except requests.exceptions.ProxyError as e:
+        print("\nTes Gagal!")
+        print(f"Error Koneksi Proxy: Tidak dapat terhubung ke proxy.")
+        print("Pastikan alamat dan port proxy sudah benar dan proxy sedang aktif.")
+    except requests.exceptions.RequestException as e:
+        print("\nTes Gagal!")
+        print(f"Terjadi error: {e}")
+        print("Ini bisa disebabkan proxy yang lambat, mati, atau memblokir koneksi.")
+
+
 
 def improve_text_with_gemini(text):
     """
@@ -195,6 +238,7 @@ def improve_text_with_gemini(text):
     except Exception as e:
         logger.error(f"An error occurred during Gemini API call: {e}")
         return f"Gemini API error: {str(e)}"
+
 
 @app.route('/transcribe', methods=['POST'])
 @require_custom_authentication
