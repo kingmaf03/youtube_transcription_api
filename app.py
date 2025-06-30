@@ -60,6 +60,24 @@ def process_transcript(video_id):
     if not (proxy_user and proxy_pass):
         logger.error("Kredensial WEBSHARE_USER atau WEBSHARE_PASS tidak ditemukan!")
         raise Exception("Konfigurasi proxy server tidak lengkap.")
+    
+     # --- BAGIAN DEBUGGING BARU ---
+    # 2. Cek IP keluar SEBELUM menghubungi YouTube
+    try:
+        # Format URL proxy lengkap untuk library 'requests'
+        proxy_host_port = "p.webshare.io:80" # Host default Webshare
+        full_proxy_url = f"http://{proxy_user}:{proxy_pass}@{proxy_host_port}"
+        proxies_for_check = {"http": full_proxy_url, "https": full_proxy_url}
+        
+        logger.info("Mengecek IP keluar melalui proxy...")
+        response = requests.get("http://httpbin.org/ip", proxies=proxies_for_check, timeout=15)
+        response.raise_for_status()
+        outgoing_ip = response.json().get('origin', 'Tidak diketahui')
+        logger.info(f"BERHASIL! Permintaan keluar akan menggunakan IP: {outgoing_ip}")
+    except Exception as ip_check_error:
+        logger.error(f"GAGAL mengecek IP keluar: {ip_check_error}")
+    # Jika pengecekan IP gagal, kita tetap lanjut, tapi kita tahu ada masalah koneksi proxy.
+    # ---------------------------
         
     # Membuat objek API dengan konfigurasi proxy Webshare
     ytt_api = YouTubeTranscriptApi(
