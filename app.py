@@ -179,21 +179,26 @@ def process_transcript(video_id):
     proxy_user = os.environ.get("WEBSHARE_USER")
     proxy_pass = os.environ.get("WEBSHARE_PASS")
 
-    # Jika kredensial tidak ada, jangan gunakan proxy
+    # Jika kredensial tidak ada, aplikasi tidak akan berfungsi di server
     if not (proxy_user and proxy_pass):
-        logger.warning("Kredensial Webshare tidak ditemukan. Mencoba tanpa proxy.")
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-    else:
-        # Buat objek API dengan konfigurasi proxy
-        ytt_api = YouTubeTranscriptApi(
+            logger.error("Kredensial WEBSHARE_USER atau WEBSHARE_PASS tidak ditemukan!")
+            # Kembalikan error yang jelas, jangan mencoba tanpa proxy
+            raise Exception("Konfigurasi proxy server tidak lengkap.")
+        
+        # Buat objek API dengan konfigurasi proxy Webshare
+    ytt_api = YouTubeTranscriptApi(
             proxy_config=WebshareProxyConfig(
                 proxy_username=proxy_user,
                 proxy_password=proxy_pass,
             )
         )
+        
         # Ambil transkrip menggunakan objek yang sudah dikonfigurasi
-        transcript_list = ytt_api.get_transcript(video_id)
+    logger.info(f"Mencoba mengambil transkrip untuk video {video_id} melalui Webshare...")
+    transcript_list = ytt_api.get_transcript(video_id)
+
     full_text = ' '.join([entry['text'] for entry in transcript_list])
+    return full_text
     
     # """Mengambil transkrip dari YouTube."""
     # # Opsi proxy, jika Anda membutuhkannya (bisa dikosongkan)
@@ -202,7 +207,7 @@ def process_transcript(video_id):
     
     # transcript = YouTubeTranscriptApi.get_transcript(video_id, proxies=proxies)
     # full_text = ' '.join([entry['text'] for entry in transcript])
-    return full_text
+    # return full_text
 
 # Ambil alamat proxy dari environment
 proxy_url = os.environ.get("PROXY")
