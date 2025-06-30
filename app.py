@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.proxies import WebshareProxyConfig
+from youtube_transcript_api._errors import TranscriptsDisabled, RequestBlocked
 
 # Import dari file lokal Anda
 from auth import require_custom_authentication
@@ -51,6 +52,9 @@ def process_transcript(video_id):
     """Mengambil transkrip dari YouTube menggunakan metode Webshare yang andal."""
     proxy_user = os.environ.get("WEBSHARE_USER")
     proxy_pass = os.environ.get("WEBSHARE_PASS")
+
+    # FIX: Menambahkan logging untuk memastikan kredensial terbaca dengan benar
+    logger.info(f"Mencoba menggunakan kredensial Webshare. User: '{proxy_user}'")
 
     # Jika kredensial proxy tidak ada, server akan gagal dengan error yang jelas.
     if not (proxy_user and proxy_pass):
@@ -109,6 +113,17 @@ def transcribe():
 
         return jsonify({"result": improved_text})
 
+  # Penanganan error yang lebih baik dan spesifik
+    except TranscriptsDisabled:
+        error_message = f"Subtitles are disabled for video: {video_id}"
+        logger.warning(error_message)
+        return jsonify({"error": error_message}), 400
+        
+    except RequestBlocked:
+        error_message = f"Request was blocked by YouTube for video: {video_id}. Proxy may be blacklisted."
+        logger.error(error_message)
+        return jsonify({"error": error_message}), 503 # Service Unavailable
+    
     except Exception as e:
         logger.exception(f"Terjadi error yang tidak terduga: {e}")
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
