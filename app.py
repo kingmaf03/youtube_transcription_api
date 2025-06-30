@@ -1,172 +1,46 @@
-# from flask import Flask, request, jsonify
-# from youtube_transcript_api import YouTubeTranscriptApi
-# import re
-# from openai import OpenAI, AsyncOpenAI
-# from openai import OpenAIError
-# import os
-# from auth import require_custom_authentication
-# from dotenv import load_dotenv
-# import logging
-# import asyncio
-# import tiktoken
-
-# load_dotenv()
-
-# app = Flask(__name__)
-
-# # Set up logging
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
-
-# # Set up OpenAI API key
-# client = AsyncOpenAI(
-#     # This is the default and can be omitted
-#     api_key=os.environ.get("OPENAI_API_KEY"),
-# )
-
-# def get_youtube_id(url):
-#     # Extract video ID from YouTube URL
-#     video_id = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', url)
-#     return video_id.group(1) if video_id else None
-
-# def process_transcript(video_id):
-#     proxy_address=os.environ.get("PROXY")
-#     transcript = YouTubeTranscriptApi.get_transcript(video_id, proxies = {"http": proxy_address,"https": proxy_address})
-#     full_text = ' '.join([entry['text'] for entry in transcript])
-#     return full_text
-
-# def chunk_text(text, max_tokens=16000):
-#     """
-#     Splits the text into chunks of approximately max_tokens tokens each.
-#     """
-#     # Initialize tokenizer
-#     tokenizer = tiktoken.encoding_for_model("gpt-4o-mini")
-
-#     words = text.split()
-#     chunks = []
-#     current_chunk = []
-#     current_token_count = 0
-
-#     for word in words:
-#         # Estimate token count for the word
-#         word_token_count = len(tokenizer.encode(word + " "))  # Add space to ensure accurate token count
-
-#         # If adding this word exceeds the max token limit, finalize the current chunk
-#         if current_token_count + word_token_count > max_tokens:
-#             chunks.append(' '.join(current_chunk))
-#             current_chunk = []
-#             current_token_count = 0
-
-#         # Add the word to the current chunk
-#         current_chunk.append(word)
-#         current_token_count += word_token_count
-
-#     # Append the last chunk
-#     if current_chunk:
-#         chunks.append(' '.join(current_chunk))
-
-#     return chunks
-
-# async def process_chunk(chunk):
-#     try:
-#         response = await client.chat.completions.create(
-#             model="gpt-4o-mini",
-#             messages=[
-#                 {"role": "system", "content": """You are a helpful assistant that improves text formatting and adds punctuation. 
-#                  You will be given texts from YouTube transcriptions and your task is to apply good formatting.
-#                  Do NOT modify individual words."""},
-#                 {"role": "user", "content": chunk}
-#             ]
-#         )
-#         return response.choices[0].message.content
-#     except OpenAIError as e:
-#         return f"OpenAI API error: {str(e)}"
-
-# async def improve_text_with_gpt4(text):
-#     if not client.api_key:
-#         return "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
-
-#     chunks = chunk_text(text)
-
-#     # Use asyncio.gather to run all tasks concurrently
-#     tasks = [process_chunk(chunk) for chunk in chunks]
-#     improved_chunks = await asyncio.gather(*tasks)
-
-#     # Combine all improved chunks back into one text
-#     return ' '.join(improved_chunks)
-
-# @app.route('/transcribe', methods=['POST'])
-# @require_custom_authentication
-# def transcribe():
-#     youtube_url = request.json.get('url')
-#     if not youtube_url:
-#         return jsonify({"error": "No YouTube URL provided"}), 400
-
-#     video_id = get_youtube_id(youtube_url)
-#     if not video_id:
-#         return jsonify({"error": "Invalid YouTube URL"}), 400
-
-#     try:
-#         logger.info(f"videoid = {video_id}")
-#         transcript_text = process_transcript(video_id)
-#         logger.info(f"text = {transcript_text}")
-#         improved_text = asyncio.run(improve_text_with_gpt4(transcript_text))
-
-#         return jsonify({"result": improved_text})
-    
-#     except Exception as e:
-#         logger.exception(f"An unexpected error occurred: {e}")
-#         return jsonify({"error": "An unexpected error occurred"}), 500
-
-# if __name__ == '__main__':
-#     app.run(host='0.0.0.0', port=8080)
-
-
 import os
-from flask import Flask, request, jsonify
-from youtube_transcript_api import YouTubeTranscriptApi
 import re
-import google.generativeai as genai
-from auth import require_custom_authentication
-from dotenv import load_dotenv
 import logging
-
-import requests
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-# Tambahkan ini di bagian atas file Anda, bersama import lainnya
-# from youtube_transcript_api.errors import TranscriptsDisabled
+
+# Import library dari pihak ketiga
+import google.generativeai as genai
+from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.proxies import WebshareProxyConfig
 
-# Muat environment variables dari file .env
+# Import dari file lokal Anda
+from auth import require_custom_authentication
+
+# 1. Muat environment variables dari file .env (Harus di paling atas)
 load_dotenv()
 
+# 2. Inisialisasi Aplikasi Flask dan Logging
 app = Flask(__name__)
-
-# Atur logging untuk debugging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Konfigurasi Google Gemini API ---
+# 3. Konfigurasi Google Gemini API
 try:
-    # Konfigurasi API key dari environment variable
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
-        logger.warning("GOOGLE_API_KEY environment variable not found.")
+        logger.warning("Variabel GOOGLE_API_KEY tidak ditemukan di environment.")
+    
     genai.configure(api_key=api_key)
     
-    # Atur instruksi sistem untuk model
     system_instruction = """You are a helpful assistant that improves text formatting and adds punctuation.
 You will be given texts from YouTube transcriptions and your task is to apply good formatting.
 Do NOT modify individual words. Your output should only be the corrected text."""
 
-    # Pilih model Gemini yang akan digunakan
     model = genai.GenerativeModel(
         'gemini-1.5-flash',
         system_instruction=system_instruction
     )
 except Exception as e:
-    logger.error(f"Failed to configure Gemini API: {e}")
+    logger.error(f"Gagal mengkonfigurasi Gemini API: {e}")
     model = None
+
+# 4. Definisi Fungsi-Fungsi Pembantu
 
 def get_youtube_id(url):
     """Mengekstrak ID video dari URL YouTube."""
@@ -174,98 +48,45 @@ def get_youtube_id(url):
     return video_id.group(1) if video_id else None
 
 def process_transcript(video_id):
-    """Mengambil transkrip dari YouTube menggunakan Webshare."""
-    # Ambil kredensial dari environment variables di Render
+    """Mengambil transkrip dari YouTube menggunakan metode Webshare yang andal."""
     proxy_user = os.environ.get("WEBSHARE_USER")
     proxy_pass = os.environ.get("WEBSHARE_PASS")
 
-    # Jika kredensial tidak ada, aplikasi tidak akan berfungsi di server
+    # Jika kredensial proxy tidak ada, server akan gagal dengan error yang jelas.
     if not (proxy_user and proxy_pass):
-            logger.error("Kredensial WEBSHARE_USER atau WEBSHARE_PASS tidak ditemukan!")
-            # Kembalikan error yang jelas, jangan mencoba tanpa proxy
-            raise Exception("Konfigurasi proxy server tidak lengkap.")
+        logger.error("Kredensial WEBSHARE_USER atau WEBSHARE_PASS tidak ditemukan!")
+        raise Exception("Konfigurasi proxy server tidak lengkap.")
         
-        # Buat objek API dengan konfigurasi proxy Webshare
+    # Membuat objek API dengan konfigurasi proxy Webshare
     ytt_api = YouTubeTranscriptApi(
-            proxy_config=WebshareProxyConfig(
-                proxy_username=proxy_user,
-                proxy_password=proxy_pass,
-            )
+        proxy_config=WebshareProxyConfig(
+            proxy_username=proxy_user,
+            proxy_password=proxy_pass,
         )
+    )
         
-        # Ambil transkrip menggunakan objek yang sudah dikonfigurasi
     logger.info(f"Mencoba mengambil transkrip untuk video {video_id} melalui Webshare...")
     transcript_list = ytt_api.get_transcript(video_id)
 
     full_text = ' '.join([entry['text'] for entry in transcript_list])
     return full_text
-    
-    # """Mengambil transkrip dari YouTube."""
-    # # Opsi proxy, jika Anda membutuhkannya (bisa dikosongkan)
-    # proxy_address = os.environ.get("PROXY")
-    # proxies = {"http": proxy_address, "https": proxy_address} if proxy_address else None
-    
-    # transcript = YouTubeTranscriptApi.get_transcript(video_id, proxies=proxies)
-    # full_text = ' '.join([entry['text'] for entry in transcript])
-    # return full_text
-
-# Ambil alamat proxy dari environment
-proxy_url = os.environ.get("PROXY")
-
-if not proxy_url:
-    print("Variabel PROXY tidak ditemukan di file .env")
-else:
-    print(f"Mencoba menggunakan proxy: {proxy_url}")
-
-    # Format proxy untuk library requests
-    proxies = {
-        "http": proxy_url,
-        "https": proxy_url,
-    }
-
-    # URL untuk mengetes IP kita
-    test_url = ""
-
-    try:
-        # Kirim permintaan melalui proxy
-        response = requests.get(test_url, proxies=proxies, timeout=10) # Timeout 10 detik
-        response.raise_for_status()  # Cek jika ada error HTTP
-
-        # Cetak hasilnya
-        print("\nTes Berhasil!")
-        print(f"IP Anda terlihat sebagai: {response.json()['origin']}")
-        print("Ini berarti proxy berfungsi dengan baik.")
-
-    except requests.exceptions.ProxyError as e:
-        print("\nTes Gagal!")
-        print(f"Error Koneksi Proxy: Tidak dapat terhubung ke proxy.")
-        print("Pastikan alamat dan port proxy sudah benar dan proxy sedang aktif.")
-    except requests.exceptions.RequestException as e:
-        print("\nTes Gagal!")
-        print(f"Terjadi error: {e}")
-        print("Ini bisa disebabkan proxy yang lambat, mati, atau memblokir koneksi.")
-
-
 
 def improve_text_with_gemini(text):
-    """
-    Memperbaiki format teks menggunakan satu panggilan ke API Gemini.
-    Tidak perlu lagi memecah-mecah teks (chunking).
-    """
-    if not genai.api_key:
-        return "Google API key not found. Please set the GOOGLE_API_KEY environment variable."
-    
+    """Memperbaiki format teks menggunakan Gemini."""
+    # FIX: Pengecekan 'genai.api_key' dihapus karena tidak valid.
+    # Pengecekan 'not model' sudah cukup untuk memastikan konfigurasi berhasil.
     if not model:
-        return "Gemini model is not initialized. Check API key configuration."
+        raise Exception("Konfigurasi Gemini API tidak lengkap atau gagal.")
 
     try:
-        # Panggil API Gemini untuk menghasilkan teks yang sudah diformat
         response = model.generate_content(text)
         return response.text
     except Exception as e:
-        logger.error(f"An error occurred during Gemini API call: {e}")
-        return f"Gemini API error: {str(e)}"
+        logger.error(f"Terjadi error saat panggilan ke API Gemini: {e}")
+        # Meneruskan error ke blok penanganan utama
+        raise e
 
+# 5. Endpoint Utama Aplikasi
 
 @app.route('/transcribe', methods=['POST'])
 @require_custom_authentication
@@ -281,26 +102,17 @@ def transcribe():
     try:
         logger.info(f"Processing video_id = {video_id}")
         
-        # 1. Dapatkan transkrip mentah
         transcript_text = process_transcript(video_id)
-        logger.info(f"Original transcript length: {len(transcript_text)} characters")
+        logger.info(f"Panjang transkrip asli: {len(transcript_text)} karakter")
 
-        # 2. Perbaiki teks menggunakan Gemini (panggilan tunggal, lebih sederhana)
         improved_text = improve_text_with_gemini(transcript_text)
 
         return jsonify({"result": improved_text})
-    
-     # --- BLOK PERBAIKAN ---
-    # Menangkap error spesifik jika subtitle dimatikan
-    # except TranscriptsDisabled:
-    #     error_message = f"Subtitles are disabled for video: {video_id}"
-    #     logger.warning(error_message)
-    #     # Kembalikan error 400 karena input dari pengguna yang salah
-    #     return jsonify({"error": error_message}), 400
-    
-    except Exception as e:
-        logger.exception(f"An unexpected error occurred in /transcribe route: {e}")
-        return jsonify({"error": "An unexpected error occurred"}), 500
 
+    except Exception as e:
+        logger.exception(f"Terjadi error yang tidak terduga: {e}")
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
+# 6. Menjalankan Server
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
