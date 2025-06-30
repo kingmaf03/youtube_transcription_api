@@ -133,6 +133,9 @@ import logging
 
 import requests
 from dotenv import load_dotenv
+# Tambahkan ini di bagian atas file Anda, bersama import lainnya
+# from youtube_transcript_api.errors import TranscriptsDisabled
+from youtube_transcript_api.proxies import WebshareProxyConfig
 
 # Muat environment variables dari file .env
 load_dotenv()
@@ -171,15 +174,34 @@ def get_youtube_id(url):
     return video_id.group(1) if video_id else None
 
 def process_transcript(video_id):
-    """Mengambil transkrip dari YouTube."""
-    # Opsi proxy, jika Anda membutuhkannya (bisa dikosongkan)
-    proxy_address = os.environ.get("PROXY")
+    """Mengambil transkrip dari YouTube menggunakan Webshare."""
+    # Ambil kredensial dari environment variables di Render
+    proxy_user = os.environ.get("WEBSHARE_USER")
+    proxy_pass = os.environ.get("WEBSHARE_PASS")
 
+    # Jika kredensial tidak ada, jangan gunakan proxy
+    if not (proxy_user and proxy_pass):
+        logger.warning("Kredensial Webshare tidak ditemukan. Mencoba tanpa proxy.")
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+    else:
+        # Buat objek API dengan konfigurasi proxy
+        ytt_api = YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username=proxy_user,
+                proxy_password=proxy_pass,
+            )
+        )
+        # Ambil transkrip menggunakan objek yang sudah dikonfigurasi
+        transcript_list = ytt_api.get_transcript(video_id)
+    full_text = ' '.join([entry['text'] for entry in transcript_list])
     
-    proxies = {"http": proxy_address, "https": proxy_address} if proxy_address else None
+    # """Mengambil transkrip dari YouTube."""
+    # # Opsi proxy, jika Anda membutuhkannya (bisa dikosongkan)
+    # proxy_address = os.environ.get("PROXY")
+    # proxies = {"http": proxy_address, "https": proxy_address} if proxy_address else None
     
-    transcript = YouTubeTranscriptApi.get_transcript(video_id, proxies=proxies)
-    full_text = ' '.join([entry['text'] for entry in transcript])
+    # transcript = YouTubeTranscriptApi.get_transcript(video_id, proxies=proxies)
+    # full_text = ' '.join([entry['text'] for entry in transcript])
     return full_text
 
 # Ambil alamat proxy dari environment
@@ -262,6 +284,14 @@ def transcribe():
         improved_text = improve_text_with_gemini(transcript_text)
 
         return jsonify({"result": improved_text})
+    
+     # --- BLOK PERBAIKAN ---
+    # Menangkap error spesifik jika subtitle dimatikan
+    # except TranscriptsDisabled:
+    #     error_message = f"Subtitles are disabled for video: {video_id}"
+    #     logger.warning(error_message)
+    #     # Kembalikan error 400 karena input dari pengguna yang salah
+    #     return jsonify({"error": error_message}), 400
     
     except Exception as e:
         logger.exception(f"An unexpected error occurred in /transcribe route: {e}")
